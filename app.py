@@ -8,7 +8,11 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score, accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, mean_squared_error, r2_score
+from sklearn.metrics import (
+    silhouette_score, accuracy_score, precision_score,
+    recall_score, f1_score, confusion_matrix,
+    mean_squared_error, r2_score
+)
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
@@ -29,20 +33,22 @@ def preprocess_data(df):
         else:
             df[col] = df[col].fillna(df[col].mean())
 
-    # Separate columns
-    cat_cols = df.select_dtypes(include='object').columns
-    num_cols = df.select_dtypes(include=np.number).columns
-
     # Encode categorical
-    le = LabelEncoder()
+    cat_cols = df.select_dtypes(include='object').columns
     for col in cat_cols:
-        df[col] = le.fit_transform(df[col])
+        df[col] = LabelEncoder().fit_transform(df[col].astype(str))
 
-    # Normalize numeric
+    # Convert everything to numeric safely
+    df = df.apply(pd.to_numeric, errors='coerce')
+
+    # Fill any NaNs created
+    df = df.fillna(0)
+
+    # Normalize
     scaler = StandardScaler()
-    df[num_cols] = scaler.fit_transform(df[num_cols])
+    df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns)
 
-    return df, cat_cols, num_cols
+    return df
 
 
 # -------------------- CLUSTERING --------------------
@@ -58,9 +64,9 @@ def optimal_clusters(X):
 
 def perform_clustering(df):
     k = optimal_clusters(df)
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    df["cluster"] = kmeans.fit_predict(df)
-    return df, kmeans
+    model = KMeans(n_clusters=k, random_state=42, n_init=10)
+    df["cluster"] = model.fit_predict(df)
+    return df
 
 
 def plot_clusters(df):
@@ -68,8 +74,8 @@ def plot_clusters(df):
     comp = pca.fit_transform(df.drop("cluster", axis=1))
 
     fig, ax = plt.subplots()
-    scatter = ax.scatter(comp[:,0], comp[:,1], c=df["cluster"], cmap='viridis')
-    plt.title("Cluster Visualization (PCA)")
+    ax.scatter(comp[:, 0], comp[:, 1], c=df["cluster"])
+    ax.set_title("Cluster Visualization (PCA)")
     st.pyplot(fig)
 
 
@@ -115,11 +121,11 @@ def classification_model(df, target, features):
         pred = model.predict(X_test)
 
         results[name] = {
-            "accuracy": accuracy_score(y_test, pred),
-            "precision": precision_score(y_test, pred),
-            "recall": recall_score(y_test, pred),
-            "f1": f1_score(y_test, pred),
-            "cm": confusion_matrix(y_test, pred)
+            "Accuracy": accuracy_score(y_test, pred),
+            "Precision": precision_score(y_test, pred, zero_division=0),
+            "Recall": recall_score(y_test, pred, zero_division=0),
+            "F1 Score": f1_score(y_test, pred, zero_division=0),
+            "Confusion Matrix": confusion_matrix(y_test, pred)
         }
 
     return results
@@ -145,7 +151,7 @@ def regression_model(df, target, features):
 
         results[name] = {
             "RMSE": np.sqrt(mean_squared_error(y_test, pred)),
-            "R2": r2_score(y_test, pred)
+            "R2 Score": r2_score(y_test, pred)
         }
 
     return results
@@ -153,72 +159,86 @@ def regression_model(df, target, features):
 
 # -------------------- INSIGHTS --------------------
 def generate_insights(df, col):
-    counts = df[col].value_counts()
+    counts = df[col].astype(str).value_counts()
+
     top = counts.idxmax()
     bottom = counts.idxmin()
 
     st.success(f"Highest count category: {top} ({counts.max()})")
     st.info(f"Lowest count category: {bottom} ({counts.min()})")
 
+    st.caption("This represents frequency (count), not averages.")
 
-# -------------------- UI --------------------
+
+# -------------------- FILE UPLOAD --------------------
 uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded:
     df = pd.read_csv(uploaded)
 
     st.subheader("📄 Data Preview")
-    st.dataframe(df.head())
+    st.dataframe(df.head(), use_container_width=True)
 
     try:
-        df_processed, cat_cols, num_cols = preprocess_data(df)
+        df_processed = preprocess_data(df)
 
         # ---------------- CATEGORICAL ----------------
         st.header("📊 Categorical Analysis")
 
-        col = st.selectbox("Select categorical column", cat_cols)
+        cat_cols = df.select_dtypes(include='object').columns.tolist()
 
-        fig, ax = plt.subplots()
-        sns.countplot(x=df[col], ax=ax)
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+        if len(cat_cols) == 0:
+            st.warning("No categorical columns found.")
+        else:
+            col = st.selectbox("Select categorical column", cat_cols)
 
-        generate_insights(df, col)
+            fig, ax = plt.subplots()
+            sns.countplot(x=df[col].astype(str), ax=ax)
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
+
+            generate_insights(df, col)
 
         # ---------------- CLUSTERING ----------------
         st.header("🧠 Clustering")
 
-        df_clustered, _ = perform_clustering(df_processed)
+        df_clustered = perform_clustering(df_processed.copy())
         plot_clusters(df_clustered)
 
         # ---------------- FEATURE SELECTION ----------------
         st.header("🎯 Stability Feature Selection")
 
-        target = "loan_status"
-        stability = stability_feature_selection(df_processed, target)
+        if "loan_status" not in df_processed.columns:
+            st.error("Column 'loan_status' not found for classification.")
+        else:
+            stability = stability_feature_selection(df_processed, "loan_status")
+            st.dataframe(stability)
 
-        st.write(stability)
+            top_features = stability.head(5).index.tolist()
 
-        top_features = stability.head(5).index.tolist()
+            # ---------------- CLASSIFICATION ----------------
+            st.header("🤖 Classification")
 
-        # ---------------- CLASSIFICATION ----------------
-        st.header("🤖 Classification")
+            class_results = classification_model(df_processed, "loan_status", top_features)
 
-        class_results = classification_model(df_processed, target, top_features)
-
-        for model, res in class_results.items():
-            st.subheader(model)
-            st.write(res)
+            for model, res in class_results.items():
+                st.subheader(model)
+                st.write(res)
 
         # ---------------- REGRESSION ----------------
         st.header("📈 Regression")
 
-        reg_target = "loan_int_rate"
-        reg_results = regression_model(df_processed, reg_target, top_features)
+        if "loan_int_rate" not in df_processed.columns:
+            st.error("Column 'loan_int_rate' not found for regression.")
+        else:
+            if not np.issubdtype(df_processed["loan_int_rate"].dtype, np.number):
+                st.error("Regression target must be numeric.")
+            else:
+                reg_results = regression_model(df_processed, "loan_int_rate", top_features)
 
-        for model, res in reg_results.items():
-            st.subheader(model)
-            st.write(res)
+                for model, res in reg_results.items():
+                    st.subheader(model)
+                    st.write(res)
 
     except Exception as e:
         st.error(f"Something went wrong: {e}")
