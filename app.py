@@ -10,9 +10,8 @@ st.markdown("""
 <style>
 .stApp {
     background: linear-gradient(135deg, #3b0a1a, #7a1f3d);
-    color: white;
 }
-h1, h2, h3, h4, p {
+h1, h2, h3, h4, p, label {
     color: white;
 }
 .stTextInput input {
@@ -32,7 +31,7 @@ h1, h2, h3, h4, p {
 
 # -------------------- TITLE --------------------
 st.title("🍒 Shiffie's Analytics <3")
-st.caption("Ask your data anything 💬")
+st.caption("Explore your data beautifully ✨")
 
 # -------------------- FILE UPLOAD --------------------
 uploaded = st.file_uploader("Upload your CSV", type=["csv"])
@@ -43,94 +42,61 @@ if uploaded:
     st.subheader("📄 Dataset Preview")
     st.dataframe(df.head(), use_container_width=True)
 
-    # -------------------- MODE TOGGLE --------------------
-    mode = st.radio("Choose Mode", ["🤖 AI Mode", "🎯 Manual Mode"])
+    # -------------------- USER QUESTION --------------------
+    query = st.text_input("💬 (Optional) What are you trying to find?")
 
-    # -------------------- USER QUERY --------------------
-    query = st.text_input("💬 Ask a question about your data")
+    # -------------------- COLUMN SELECTION --------------------
+    st.subheader("🎯 Select Your Analysis")
 
-    # -------------------- AI LOGIC --------------------
-    def ai_suggest(df, query):
-        query = query.lower()
+    x = st.selectbox("Select Category Column (X-axis)", df.columns)
+    y = st.selectbox("Select Numeric Column (Optional)", ["None"] + list(df.columns))
 
-        # Default
-        x = None
-        y = None
-        chart = "bar"
+    chart = st.selectbox("Select Chart Type", ["Bar Chart", "Pie Chart"])
 
-        # GENRE COUNT
-        if "genre" in query or "category" in query:
-            for col in df.columns:
-                if "genre" in col.lower() or df[col].dtype == "object":
-                    x = col
-                    chart = "bar"
-                    break
-
-        # POPULARITY / AVG
-        if "average" in query or "highest" in query or "popularity" in query:
-            num_cols = df.select_dtypes(include='number').columns
-            cat_cols = df.select_dtypes(include='object').columns
-
-            if len(cat_cols) > 0 and len(num_cols) > 0:
-                x = cat_cols[0]
-                y = num_cols[0]
-                chart = "bar"
-
-        return x, y, chart
-
-    # -------------------- MANUAL SELECTION --------------------
-    if mode == "🎯 Manual Mode":
-        st.subheader("🎯 Select Columns")
-
-        x = st.selectbox("Select Category Column (X-axis)", df.columns)
-        y = st.selectbox("Select Numeric Column (Optional)", ["None"] + list(df.columns))
-        chart = st.selectbox("Select Chart Type", ["bar", "pie"])
-
-    else:
-        x, y, chart = ai_suggest(df, query)
-        st.subheader("🤖 AI Suggestions")
-        st.write("X-axis:", x)
-        st.write("Y-axis:", y if y else "Count")
-        st.write("Chart:", chart)
-
-    # -------------------- RUN ANALYSIS --------------------
+    # -------------------- ANALYZE --------------------
     if st.button("✨ Analyze"):
 
-        if not x:
-            st.warning("AI couldn't determine columns. Try manual mode.")
+        df[x] = df[x].astype(str)
+
+        # -------- AGGREGATION --------
+        if y != "None" and y in df.columns:
+            result = df.groupby(x)[y].mean().reset_index()
+            result = result.sort_values(by=y, ascending=False)
+            value_col = y
         else:
-            df[x] = df[x].astype(str)
+            result = df[x].value_counts().reset_index()
+            result.columns = [x, "Count"]
+            value_col = "Count"
 
-            if y and y != "None" and y in df.columns:
-                result = df.groupby(x)[y].mean().reset_index()
-                result = result.sort_values(by=y, ascending=False)
-            else:
-                result = df[x].value_counts().reset_index()
-                result.columns = [x, "Count"]
-                y = "Count"
+        # -------------------- VISUALIZATION --------------------
+        st.subheader("📊 Visualization")
 
-            # -------------------- PLOT --------------------
-            st.subheader("📊 Visualization")
+        if chart == "Pie Chart":
+            fig = px.pie(result, names=x, values=value_col)
+        else:
+            fig = px.bar(result, x=x, y=value_col, color=x)
 
-            if chart == "pie":
-                fig = px.pie(result, names=x, values=y)
-            else:
-                fig = px.bar(result, x=x, y=y, color=x)
+        st.plotly_chart(fig, use_container_width=True)
 
-            st.plotly_chart(fig, use_container_width=True)
+        # -------------------- INSIGHTS --------------------
+        st.subheader("🧠 Insights (Simple Explanation)")
 
-            # -------------------- INSIGHTS --------------------
-            st.subheader("🧠 What this means")
+        top = result.iloc[0]
 
-            top = result.iloc[0]
+        st.success(
+            f"👉 The most important category here is **{top[x]}**, "
+            f"with a value of **{round(top[value_col],2)}**."
+        )
 
-            st.success(
-                f"👉 The top category is **{top[x]}**, with value **{round(top[y],2)}**.\n\n"
-                f"This means this category dominates compared to others in your dataset."
-            )
+        st.info(
+            f"""
+📌 Summary:
+- Total categories analyzed: {len(result)}
+- Highest value: {round(result[value_col].max(),2)}
+- Lowest value: {round(result[value_col].min(),2)}
 
-            st.info(
-                f"📌 Total categories analyzed: {len(result)}\n"
-                f"📊 Highest value: {round(result[y].max(),2)}\n"
-                f"📉 Lowest value: {round(result[y].min(),2)}"
-            )
+💡 Interpretation:
+This chart shows how different categories compare with each other.
+The higher the value, the more dominant that category is.
+"""
+        )
