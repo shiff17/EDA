@@ -1,6 +1,3 @@
-The error is in the `.format()` string - missing variables. Here's the **FINAL PERFECT VERSION**:
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
