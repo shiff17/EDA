@@ -72,8 +72,9 @@ def plot_clusters(df):
     comp = pca.fit_transform(df.drop("cluster", axis=1))
 
     fig, ax = plt.subplots()
-    ax.scatter(comp[:, 0], comp[:, 1], c=df["cluster"])
+    scatter = ax.scatter(comp[:, 0], comp[:, 1], c=df["cluster"], cmap='viridis')
     ax.set_title("Cluster Visualization (PCA)")
+    plt.colorbar(scatter)
     st.pyplot(fig)
 
 
@@ -104,11 +105,11 @@ def classification_model(df, target, features):
     X = df[features]
     y = df[target]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000),
-        "Random Forest": RandomForestClassifier()
+        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
+        "Random Forest": RandomForestClassifier(random_state=42)
     }
 
     results = {}
@@ -133,11 +134,11 @@ def regression_model(df, target, features):
     X = df[features]
     y = df[target]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     models = {
         "Linear Regression": LinearRegression(),
-        "Random Forest": RandomForestRegressor()
+        "Random Forest": RandomForestRegressor(random_state=42)
     }
 
     results = {}
@@ -161,8 +162,8 @@ def generate_insights(df, col):
     top = counts.idxmax()
     bottom = counts.idxmin()
 
-    st.success(f"Highest count category: {top} ({counts.max()})")
-    st.info(f"Lowest count category: {bottom} ({counts.min()})")
+    st.success(f"🎯 Highest count category: **{top}** ({counts.max()})")
+    st.info(f"📉 Lowest count category: **{bottom}** ({counts.min()})")
     st.caption("This represents frequency (count), not averages.")
 
 
@@ -174,6 +175,16 @@ if uploaded:
 
     st.subheader("📄 Data Preview")
     st.dataframe(df.head(), use_container_width=True)
+    
+    # Show data info
+    st.subheader("📊 Data Info")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Rows", len(df))
+    with col2:
+        st.metric("Columns", len(df.columns))
+    
+    st.text(f"Columns: {', '.join(df.columns.tolist())}")
 
     try:
         df_processed = preprocess_data(df)
@@ -184,88 +195,145 @@ if uploaded:
         cat_cols = df.select_dtypes(include='object').columns.tolist()
 
         if len(cat_cols) == 0:
-            st.warning("No categorical columns found.")
+            st.warning("⚠️ No categorical columns found.")
         else:
             col = st.selectbox("Select categorical column", cat_cols)
 
-            fig, ax = plt.subplots()
-            sns.countplot(x=df[col].astype(str), ax=ax)
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.countplot(x=df[col].astype(str), ax=ax, palette='viridis')
             plt.xticks(rotation=45)
+            plt.tight_layout()
             st.pyplot(fig)
 
             generate_insights(df, col)
 
-        # ---------------- SAFE NUMERIC SELECTION ----------------
+        # ---------------- FIXED AGGREGATED ANALYSIS ----------------
+        st.header("📊 Aggregated Analysis")
+
+        all_cols = df.columns.tolist()
         numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            x = st.selectbox("Select X (Category) Column", all_cols)
+        with col2:
+            y_options = ["None"] + numeric_cols
+            y = st.selectbox("Select Y (Numeric) Column", y_options)
 
-        st.header("📊 Aggregated Analysis (Safe Mean)")
-
-        x = st.selectbox("Select Category Column", df.columns)
-        y = st.selectbox("Select Numeric Column", ["None"] + numeric_cols)
-
-        if st.button("Run Analysis"):
-
-            df[x] = df[x].astype(str)
-
+        if st.button("Run Analysis", type="primary"):
+            df_analysis = df.copy()
+            df_analysis[x] = df_analysis[x].astype(str)
+            
             if y != "None":
-                if not pd.api.types.is_numeric_dtype(df[y]):
-                    st.error("❌ Selected Y column is not numeric.")
+                # Verify Y is actually numeric
+                if y not in numeric_cols:
+                    st.error(f"❌ '{y}' is not a numeric column!")
                     st.stop()
+                
+                # Safe numeric conversion and mean calculation
+                df_analysis[y] = pd.to_numeric(df_analysis[y], errors='coerce')
+                df_analysis = df_analysis.dropna(subset=[y])
+                
+                if len(df_analysis) == 0:
+                    st.error("❌ No valid numeric data found for analysis!")
+                    st.stop()
+                
+                result = df_analysis.groupby(x)[y].agg(['mean', 'count']).reset_index()
+                result.columns = [x, 'mean_value', 'count']
+                result = result.sort_values('mean_value', ascending=False)
 
-                result = df.groupby(x)[y].mean().dropna().reset_index()
-
-                fig = plt.figure()
-                sns.barplot(data=result, x=x, y=y)
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.barplot(data=result.head(10), x=x, y='mean_value', ax=ax, palette='viridis')
                 plt.xticks(rotation=45)
+                plt.title(f'Average {y} by {x}')
+                plt.tight_layout()
                 st.pyplot(fig)
 
-                st.success(f"Highest average {y}: {result.iloc[0][x]} ({round(result.iloc[0][y],2)})")
+                st.success(f"🎯 Highest average **{y}**: **{result.iloc[0][x]}** ({round(result.iloc[0]['mean_value'], 2)})")
+                st.dataframe(result.head(10))
 
             else:
-                counts = df[x].value_counts().reset_index()
+                # Count analysis only
+                counts = df_analysis[x].value_counts().reset_index()
                 counts.columns = [x, "Count"]
+                counts = counts.sort_values("Count", ascending=False)
 
-                fig = plt.figure()
-                sns.barplot(data=counts, x=x, y="Count")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.barplot(data=counts.head(10), x=x, y="Count", ax=ax, palette='viridis')
                 plt.xticks(rotation=45)
+                plt.title(f'Count of {x}')
+                plt.tight_layout()
                 st.pyplot(fig)
 
-                st.success(f"Most frequent category: {counts.iloc[0][x]} ({counts.iloc[0]['Count']})")
+                st.success(f"🎯 Most frequent category: **{counts.iloc[0][x]}** ({counts.iloc[0]['Count']})")
+                st.dataframe(counts.head(10))
 
         # ---------------- CLUSTERING ----------------
-        st.header("🧠 Clustering")
+        st.header("🧠 Clustering Analysis")
+        
+        if st.button("Run Clustering", type="secondary"):
+            df_clustered = perform_clustering(df_processed.copy())
+            plot_clusters(df_clustered)
+            
+            st.subheader("Cluster Distribution")
+            st.dataframe(df_clustered['cluster'].value_counts().reset_index())
 
-        df_clustered = perform_clustering(df_processed.copy())
-        plot_clusters(df_clustered)
-
-        # ---------------- FEATURE SELECTION ----------------
-        st.header("🎯 Stability Feature Selection")
-
+        # ---------------- FEATURE SELECTION & ML ----------------
+        st.header("🎯 ML Analysis (Auto-detect targets)")
+        
+        # Auto-detect common ML targets
+        possible_targets = []
         if "loan_status" in df_processed.columns:
-            stability = stability_feature_selection(df_processed, "loan_status")
-            st.dataframe(stability)
-
-            top_features = stability.head(5).index.tolist()
-
-            # ---------------- CLASSIFICATION ----------------
-            st.header("🤖 Classification")
-
-            class_results = classification_model(df_processed, "loan_status", top_features)
-            for model, res in class_results.items():
-                st.subheader(model)
-                st.write(res)
-
-            # ---------------- REGRESSION ----------------
-            st.header("📈 Regression")
-
-            if "loan_int_rate" in df_processed.columns:
-                reg_results = regression_model(df_processed, "loan_int_rate", top_features)
-                for model, res in reg_results.items():
-                    st.subheader(model)
-                    st.write(res)
-
+            possible_targets.append("loan_status")
+        if "loan_int_rate" in df_processed.columns:
+            possible_targets.append("loan_int_rate")
+        if "target" in df_processed.columns:
+            possible_targets.append("target")
+            
+        if possible_targets:
+            target = st.selectbox("Select target column", possible_targets)
+            
+            if st.button("Run ML Pipeline", type="primary"):
+                stability = stability_feature_selection(df_processed, target)
+                st.subheader("🔥 Top Stable Features")
+                st.dataframe(stability.head(10))
+                
+                top_features = stability.head(min(10, len(stability))).index.tolist()
+                
+                if len(top_features) > 0:
+                    # Classification if target seems binary-ish
+                    unique_vals = len(df_processed[target].unique())
+                    if unique_vals <= 10:  # Likely classification
+                        st.header("🤖 Classification Results")
+                        try:
+                            class_results = classification_model(df_processed, target, top_features)
+                            for model, res in class_results.items():
+                                st.subheader(f"**{model}**")
+                                col1, col2, col3, col4 = st.columns(4)
+                                col1.metric("Accuracy", f"{res['Accuracy']:.3f}")
+                                col2.metric("Precision", f"{res['Precision']:.3f}")
+                                col3.metric("Recall", f"{res['Recall']:.3f}")
+                                col4.metric("F1", f"{res['F1 Score']:.3f}")
+                                st.write("Confusion Matrix:")
+                                st.write(res['Confusion Matrix'])
+                        except Exception as e:
+                            st.error(f"Classification failed: {e}")
+                    
+                    # Always try regression
+                    st.header("📈 Regression Results")
+                    try:
+                        reg_results = regression_model(df_processed, target, top_features)
+                        for model, res in reg_results.items():
+                            st.subheader(f"**{model}**")
+                            col1, col2 = st.columns(2)
+                            col1.metric("RMSE", f"{res['RMSE']:.3f}")
+                            col2.metric("R²", f"{res['R2 Score']:.3f}")
+                    except Exception as e:
+                        st.error(f"Regression failed: {e}")
         else:
-            st.error("loan_status column not found for ML tasks.")
+            st.info("ℹ️ No common ML target columns found (loan_status, loan_int_rate, target).")
 
     except Exception as e:
-        st.error(f"Something went wrong: {e}")
+        st.error(f"❌ Something went wrong: {str(e)}")
+        st.error("Please check your data format and try again.")
