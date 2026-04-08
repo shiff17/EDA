@@ -3,233 +3,237 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-from sklearn.metrics import (
-    silhouette_score, accuracy_score, precision_score,
-    recall_score, f1_score, confusion_matrix,
-    mean_squared_error, r2_score
-)
-from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    mean_squared_error, r2_score, confusion_matrix
+)
+from sklearn.preprocessing import StandardScaler
 
-st.set_page_config(page_title="Shiffie's Analytics <3", layout="wide")
+st.set_page_config(page_title="Shiffie's Analytics", layout="wide", page_icon="📊")
 
-st.title("🍒 Shiffie's Analytics <3")
-st.caption("🤖 Perfect ML + ZERO ERRORS GUARANTEED ✨")
+st.title("📊 Shiffie's Smart Analytics")
+st.caption("✅ Practical insights • ✅ No crashes • ✅ Clear explanations")
 
-# -------------------- UTILITIES --------------------
-def is_truly_numeric(series):
-    try:
-        numeric_series = pd.to_numeric(series, errors='coerce')
-        if numeric_series.isna().all():
-            return False
-        numeric_series.mean()
-        return True
-    except:
-        return False
+# File upload
+uploaded_file = st.file_uploader("📁 Upload CSV", type="csv")
 
-def get_safe_numeric_columns(df):
-    return [col for col in df.columns if is_truly_numeric(df[col])]
-
-def detect_target_type(y):
-    unique_count = len(pd.to_numeric(y, errors='coerce').dropna().unique())
-    return "classification" if unique_count <= 20 else "regression"
-
-def preprocess_data(df):
-    df = df.copy()
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.success(f"✅ Loaded {len(df):,} rows × {len(df.columns)} columns")
     
-    for col in df.columns:
-        if df[col].dtype == "object":
-            df[col] = df[col].fillna("Unknown")
-        elif is_truly_numeric(df[col]):
-            df[col] = df[col].fillna(df[col].median())
-        else:
-            df[col] = df[col].fillna(0)
-    
-    cat_cols = df.select_dtypes(include='object').columns
-    for col in cat_cols:
-        df[col] = LabelEncoder().fit_transform(df[col].astype(str))
-    
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    
-    scaler = StandardScaler()
-    return pd.DataFrame(scaler.fit_transform(df), columns=df.columns)
-
-# -------------------- CLUSTERING --------------------
-def perform_clustering(df):
-    if len(df) < 3:
-        st.warning("Need more data")
-        return df
-    k = min(5, len(df)//5)
-    model = KMeans(n_clusters=k, random_state=42, n_init=10)
-    df["cluster"] = model.fit_predict(df)
-    return df
-
-def plot_clusters(df):
-    pca = PCA(n_components=2)
-    comp = pca.fit_transform(df.drop("cluster", axis=1))
-    fig, ax = plt.subplots(figsize=(10, 8))
-    scatter = ax.scatter(comp[:, 0], comp[:, 1], c=df["cluster"], cmap='viridis', s=30)
-    ax.set_title("Clusters (PCA)")
-    plt.colorbar(scatter)
-    st.pyplot(fig)
-
-# -------------------- ML MODELS --------------------
-def run_classification(df, target, features):
-    X_train, X_test, y_train, y_test = train_test_split(
-        df[features], df[target], test_size=0.2, random_state=42
-    )
-    
-    models = {
-        "Logistic": LogisticRegression(max_iter=1000, random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=50, random_state=42)
-    }
-    
-    results = {}
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        results[name] = {
-            "Accuracy": accuracy_score(y_test, y_pred),
-            "Precision": precision_score(y_test, y_pred, zero_division=0),
-            "Recall": recall_score(y_test, y_pred, zero_division=0),
-            "F1": f1_score(y_test, y_pred, zero_division=0)
-        }
-    return results
-
-def run_regression(df, target, features):
-    X_train, X_test, y_train, y_test = train_test_split(
-        df[features], df[target], test_size=0.2, random_state=42
-    )
-    
-    models = {
-        "Linear": LinearRegression(),
-        "Random Forest": RandomForestRegressor(n_estimators=50, random_state=42)
-    }
-    
-    results = {}
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        results[name] = {
-            "RMSE": np.sqrt(mean_squared_error(y_test, y_pred)),
-            "R2": r2_score(y_test, y_pred)  # ✅ FIXED: "R2" not "R2 Score"
-        }
-    return results
-
-# -------------------- MAIN --------------------
-uploaded = st.file_uploader("📁 Upload CSV", type=["csv"])
-
-if uploaded:
-    try:
-        df = pd.read_csv(uploaded)
-        st.success(f"✅ Loaded {len(df):,} rows × {len(df.columns)} cols")
-    except:
-        st.error("❌ Invalid CSV")
-        st.stop()
-    
-    # Overview
-    col1, col2, col3 = st.columns(3)
-    with col1: st.metric("Rows", len(df))
-    with col2: st.metric("Columns", len(df.columns))
-    with col3: st.metric("Missing", df.isna().sum().sum())
-    
-    st.subheader("📄 Preview")
-    st.dataframe(df.head(10), use_container_width=True)
-    
-    # Preprocess
-    with st.spinner("Preprocessing data..."):
-        df_processed = preprocess_data(df)
-    
-    # Categorical
-    st.header("📊 Categorical")
-    cat_cols = df.select_dtypes(include='object').columns.tolist()
-    if cat_cols:
-        selected = st.selectbox("Column", cat_cols)
-        fig, ax = plt.subplots(figsize=(12, 6))
-        sns.countplot(data=df, x=selected, ax=ax, palette='viridis')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-    
-    # Group analysis
-    st.header("📈 Group Analysis")
-    safe_numeric = get_safe_numeric_columns(df)
-    
-    col1, col2 = st.columns(2)
+    # Data overview
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        group_col = st.selectbox("Group by", df.columns)
+        st.metric("Rows", len(df))
     with col2:
-        value_col = st.selectbox("Average", ["None"] + safe_numeric)
+        st.metric("Columns", len(df.columns))
+    with col3:
+        missing_pct = df.isna().sum().sum() / (len(df) * len(df.columns)) * 100
+        st.metric("Missing Data", f"{missing_pct:.1f}%")
+    with col4:
+        st.metric("Unique Values", df.nunique().mean())
     
-    if st.button("🔍 Analyze", type="secondary"):
-        df_temp = df[[group_col]].copy()
-        df_temp[group_col] = df_temp[group_col].astype(str)
+    st.subheader("🔍 Data Preview")
+    st.dataframe(df.head(), use_container_width=True)
+    
+    # 1. SIMPLE EDA - Most useful first
+    st.header("1️⃣ Quick EDA - Find Patterns Instantly")
+    st.markdown("""
+    **What this does**: Shows distributions and relationships in your data
+    **Why useful**: Spot outliers, trends, missing values immediately
+    """)
+    
+    # Auto-detect column types
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+    
+    # Numeric distributions
+    if numeric_cols:
+        st.subheader("📈 Numeric Columns Distribution")
+        selected_num = st.selectbox("Pick numeric column", numeric_cols)
+        fig = px.histogram(df, x=selected_num, marginal="box", title=f"Distribution of {selected_num}")
+        st.plotly_chart(fig, use_container_width=True)
         
-        if value_col != "None":
-            df_temp[value_col] = pd.to_numeric(df[value_col], errors='coerce')
-            df_temp = df_temp.dropna(subset=[value_col])
-            if len(df_temp) > 1:
-                means = df_temp.groupby(group_col)[value_col].mean().sort_values(ascending=False).head(10)
-                st.bar_chart(means)
-                st.success(f"🏆 **{means.index[0]}**: {means.iloc[0]:.3f}")
-        else:
-            counts = df_temp[group_col].value_counts().head(10)
-            st.bar_chart(counts)
-            st.success(f"🏆 **{counts.index[0]}**: {counts.iloc[0]}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Mean", f"{df[selected_num].mean():.2f}")
+        with col2:
+            st.metric("Missing", f"{df[selected_num].isna().sum()}")
     
-    # Clustering
-    st.header("🧠 Clustering")
-    if st.button("🎨 Cluster Data", type="secondary"):
-        df_clustered = perform_clustering(df_processed.copy())
-        plot_clusters(df_clustered)
-        st.dataframe(df_clustered['cluster'].value_counts())
+    # Categorical distributions
+    if categorical_cols:
+        st.subheader("📊 Categorical Columns")
+        selected_cat = st.selectbox("Pick categorical column", categorical_cols)
+        fig = px.histogram(df, x=selected_cat, title=f"Count of {selected_cat}")
+        st.plotly_chart(fig, use_container_width=True)
     
-    # 🔥 ML - PERFECTLY SAFE
-    st.header("🤖 ML Analysis")
-    st.markdown("**Pick ANY column** - auto classification/regression detection!")
+    # 2. CORRELATION - SUPER USEFUL
+    st.header("2️⃣ Correlations - Find Relationships")
+    st.markdown("""
+    **What this shows**: Which columns move together
+    **Why useful**: Find predictors for your target variable
+    """)
     
-    target_cols = df_processed.columns.tolist()
-    selected_target = st.selectbox("🎯 Target", target_cols)
-    
-    features = [col for col in target_cols if col != selected_target]
-    
-    if len(features) > 0:
-        target_type = detect_target_type(df_processed[selected_target])
-        st.info(f"**Detected**: {target_type.upper()}")
-        
-        if st.button("🚀 Train All Models", type="primary"):
-            try:
-                if target_type == "classification":
-                    st.subheader("📊 Classification")
-                    results = run_classification(df_processed, selected_target, features)
-                    
-                    for model_name, metrics in results.items():
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Accuracy", f"{metrics['Accuracy']:.3f}")
-                        col2.metric("Precision", f"{metrics['Precision']:.3f}")
-                        col3.metric("Recall", f"{metrics['Recall']:.3f}")
-                        col4.metric("F1", f"{metrics['F1']:.3f}")
-                
-                else:
-                    st.subheader("📈 Regression")
-                    results = run_regression(df_processed, selected_target, features)
-                    
-                    for model_name, metrics in results.items():
-                        col1, col2 = st.columns(2)
-                        col1.metric("RMSE", f"{metrics['RMSE']:.6f}")
-                        col2.metric("R²", f"{metrics['R2']:.3f}")  # ✅ FIXED MATCH
-                
-                st.success("✅ All models trained successfully!")
-                
-            except Exception as e:
-                st.error(f"ML Error: {str(e)}")
+    if len(numeric_cols) >= 2:
+        corr_data = df[numeric_cols].corr()
+        fig = px.imshow(corr_data, text_auto=True, aspect="auto", color_continuous_scale="RdBu_r")
+        fig.update_layout(title="Correlation Heatmap")
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Need more columns for ML")
+        st.info("Need 2+ numeric columns for correlation")
+    
+    # 3. GROUP ANALYSIS - Business Insights
+    st.header("3️⃣ Group Analysis - Business Insights")
+    st.markdown("""
+    **What this does**: Average values by category
+    **Why useful**: "What's the average loan amount by home ownership?"
+    """)
+    
+    if len(categorical_cols) > 0 and len(numeric_cols) > 0:
+        col1, col2 = st.columns(2)
+        with col1:
+            group_by = st.selectbox("Group by (category)", categorical_cols)
+        with col2:
+            avg_col = st.selectbox("Average (numeric)", numeric_cols)
+        
+        if st.button("🔍 Show Insights"):
+            result = df.groupby(group_by)[avg_col].agg(['mean', 'count']).round(2)
+            result.columns = ['Average', 'Count']
+            result = result.sort_values('Average', ascending=False)
+            
+            fig = px.bar(result, x=result.index, y='Average', 
+                        text='Average', title=f"Average {avg_col} by {group_by}")
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.dataframe(result)
+            st.success(f"🏆 Highest: **{result.index[0]}** = {result.iloc[0]['Average']:.2f}")
+    
+    # 4. ML PREDICTION - Only if target selected
+    st.header("4️⃣ Predict Target Variable")
+    st.markdown("""
+    **What this does**: Predicts your target using all other columns
+    **Why useful**: "Can I predict loan approval from other features?"
+    """)
+    
+    all_cols = df.columns.tolist()
+    target_col = st.selectbox("🎯 What do you want to predict?", all_cols)
+    
+    if st.button("🚀 Train Predictor", type="primary"):
+        # Prepare data
+        feature_cols = [col for col in all_cols if col != target_col]
+        
+        # Encode categoricals
+        df_ml = df[feature_cols + [target_col]].copy()
+        for col in df_ml.columns:
+            if df_ml[col].dtype == 'object':
+                df_ml[col] = LabelEncoder().fit_transform(df_ml[col].astype(str))
+        
+        # Remove any remaining non-numeric
+        df_ml = df_ml.select_dtypes(include=[np.number])
+        if target_col not in df_ml.columns:
+            st.error("Target column became non-numeric - pick another")
+            st.stop()
+        
+        feature_cols = [col for col in df_ml.columns if col != target_col]
+        
+        if len(feature_cols) == 0:
+            st.error("No features available")
+            st.stop()
+        
+        X = df_ml[feature_cols]
+        y = df_ml[target_col]
+        
+        # Auto-detect task type
+        unique_y = len(y.unique())
+        is_classification = unique_y <= 20
+        
+        st.info(f"**Task**: {'Classification' if is_classification else 'Regression'} "
+                f"({unique_y} unique target values)")
+        
+        # Train models
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        if is_classification:
+            models = {
+                "Logistic Regression": LogisticRegression(max_iter=1000),
+                "Random Forest": RandomForestClassifier(n_estimators=100)
+            }
+            metric_name = "Accuracy"
+        else:
+            models = {
+                "Linear Regression": LinearRegression(),
+                "Random Forest": RandomForestRegressor(n_estimators=100)
+            }
+            metric_name = "R² Score"
+        
+        results = {}
+        for name, model in models.items():
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            
+            if is_classification:
+                score = accuracy_score(y_test, y_pred)
+            else:
+                score = r2_score(y_test, y_pred)
+            
+            results[name] = score
+        
+        # Display results
+        st.subheader("📊 Model Performance")
+        perf_df = pd.DataFrame({
+            'Model': list(results.keys()),
+            f'{metric_name}': list(results.values())
+        }).round(3)
+        
+        st.dataframe(perf_df, use_container_width=True)
+        
+        best_model = max(results, key=results.get)
+        st.success(f"🏆 **Best Model**: {best_model} ({results[best_model]:.3f})")
+        
+        # Feature importance (if RF)
+        if "Random Forest" in best_model:
+            rf_model = models["Random Forest"]
+            importances = pd.DataFrame({
+                'Feature': feature_cols,
+                'Importance': rf_model.feature_importances_
+            }).sort_values('Importance', ascending=False)
+            
+            st.subheader("🔥 Top Predictors")
+            fig = px.bar(importances.head(10), x='Importance', y='Feature',
+                        orientation='h', title="Most Important Features")
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # 5. Missing Data Report
+    st.header("5️⃣ Data Quality Check")
+    missing_data = df.isna().sum()
+    if missing_data.sum() > 0:
+        missing_df = pd.DataFrame({
+            'Column': missing_data.index,
+            'Missing': missing_data.values,
+            '% Missing': (missing_data / len(df) * 100).round(1)
+        }).sort_values('% Missing', ascending=False)
+        
+        st.dataframe(missing_df[missing_df['Missing'] > 0])
+    else:
+        st.success("✅ No missing data!")
 
 else:
-    st.info("👆 Upload CSV to start!")
+    st.info("👆 **Upload your CSV** to get instant insights!")
+    st.markdown("""
+    ## 🎯 **What you'll get:**
+    1. **Distributions** - See patterns in your data
+    2. **Correlations** - Find related variables  
+    3. **Group insights** - Business metrics by category
+    4. **ML predictions** - Predict any target automatically
+    5. **Data quality** - Missing values report
+    
+    **No crashes. No complexity. Just insights.**
+    """)
+    
