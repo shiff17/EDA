@@ -1,5 +1,5 @@
 cd test
 pip install -r requirement.txt
-python test.py
+python app.py
 streamlit run app.py
  
