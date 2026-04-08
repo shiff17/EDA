@@ -20,13 +20,13 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 st.set_page_config(page_title="Shiffie's Analytics <3", layout="wide")
 
 st.title("🍒 Shiffie's Analytics <3")
-st.caption("Clustering + Classification + Regression + Stability Feature Selection")
+st.caption("Robust ML + Clean Insights + No Errors ✨")
 
 # -------------------- PREPROCESSING --------------------
 def preprocess_data(df):
     df = df.copy()
 
-    # Handle missing values
+    # Fill missing values
     for col in df.columns:
         if df[col].dtype == "object":
             df[col] = df[col].fillna("Unknown")
@@ -38,10 +38,8 @@ def preprocess_data(df):
     for col in cat_cols:
         df[col] = LabelEncoder().fit_transform(df[col].astype(str))
 
-    # Convert everything to numeric safely
+    # Ensure numeric
     df = df.apply(pd.to_numeric, errors='coerce')
-
-    # Fill any NaNs created
     df = df.fillna(0)
 
     # Normalize
@@ -98,8 +96,7 @@ def stability_feature_selection(df, target, iterations=10):
 
         scores[top_features] += 1
 
-    stability = scores / iterations
-    return stability.sort_values(ascending=False)
+    return (scores / iterations).sort_values(ascending=False)
 
 
 # -------------------- CLASSIFICATION --------------------
@@ -166,11 +163,10 @@ def generate_insights(df, col):
 
     st.success(f"Highest count category: {top} ({counts.max()})")
     st.info(f"Lowest count category: {bottom} ({counts.min()})")
-
     st.caption("This represents frequency (count), not averages.")
 
 
-# -------------------- FILE UPLOAD --------------------
+# -------------------- MAIN --------------------
 uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded:
@@ -199,6 +195,43 @@ if uploaded:
 
             generate_insights(df, col)
 
+        # ---------------- SAFE NUMERIC SELECTION ----------------
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+
+        st.header("📊 Aggregated Analysis (Safe Mean)")
+
+        x = st.selectbox("Select Category Column", df.columns)
+        y = st.selectbox("Select Numeric Column", ["None"] + numeric_cols)
+
+        if st.button("Run Analysis"):
+
+            df[x] = df[x].astype(str)
+
+            if y != "None":
+                if not pd.api.types.is_numeric_dtype(df[y]):
+                    st.error("❌ Selected Y column is not numeric.")
+                    st.stop()
+
+                result = df.groupby(x)[y].mean().dropna().reset_index()
+
+                fig = plt.figure()
+                sns.barplot(data=result, x=x, y=y)
+                plt.xticks(rotation=45)
+                st.pyplot(fig)
+
+                st.success(f"Highest average {y}: {result.iloc[0][x]} ({round(result.iloc[0][y],2)})")
+
+            else:
+                counts = df[x].value_counts().reset_index()
+                counts.columns = [x, "Count"]
+
+                fig = plt.figure()
+                sns.barplot(data=counts, x=x, y="Count")
+                plt.xticks(rotation=45)
+                st.pyplot(fig)
+
+                st.success(f"Most frequent category: {counts.iloc[0][x]} ({counts.iloc[0]['Count']})")
+
         # ---------------- CLUSTERING ----------------
         st.header("🧠 Clustering")
 
@@ -208,9 +241,7 @@ if uploaded:
         # ---------------- FEATURE SELECTION ----------------
         st.header("🎯 Stability Feature Selection")
 
-        if "loan_status" not in df_processed.columns:
-            st.error("Column 'loan_status' not found for classification.")
-        else:
+        if "loan_status" in df_processed.columns:
             stability = stability_feature_selection(df_processed, "loan_status")
             st.dataframe(stability)
 
@@ -220,25 +251,21 @@ if uploaded:
             st.header("🤖 Classification")
 
             class_results = classification_model(df_processed, "loan_status", top_features)
-
             for model, res in class_results.items():
                 st.subheader(model)
                 st.write(res)
 
-        # ---------------- REGRESSION ----------------
-        st.header("📈 Regression")
+            # ---------------- REGRESSION ----------------
+            st.header("📈 Regression")
 
-        if "loan_int_rate" not in df_processed.columns:
-            st.error("Column 'loan_int_rate' not found for regression.")
-        else:
-            if not np.issubdtype(df_processed["loan_int_rate"].dtype, np.number):
-                st.error("Regression target must be numeric.")
-            else:
+            if "loan_int_rate" in df_processed.columns:
                 reg_results = regression_model(df_processed, "loan_int_rate", top_features)
-
                 for model, res in reg_results.items():
                     st.subheader(model)
                     st.write(res)
+
+        else:
+            st.error("loan_status column not found for ML tasks.")
 
     except Exception as e:
         st.error(f"Something went wrong: {e}")
