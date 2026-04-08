@@ -1,86 +1,114 @@
-# 🔥 SMART ANALYTICS SUMMARY (REAL INSIGHTS)
+# ===============================
+# 🎯 COMPLETE ANALYTICS SUMMARY
+# ===============================
 
 st.markdown("## 🎯 COMPLETE ANALYTICS SUMMARY")
 
-insights_text = ""
+summary_sections = []
 
-# ---- 1️⃣ Loan Intent vs Loan Amount (Business Question) ----
+# -------------------------------
+# 1️⃣ Business Question Example
+# -------------------------------
 if "loan_intent" in df.columns and "loan_amnt" in df.columns:
-    
-    loan_analysis = (
+
+    intent_analysis = (
         df.groupby("loan_intent")["loan_amnt"]
         .mean()
         .sort_values(ascending=False)
     )
 
-    top_intent = loan_analysis.index[0]
-    top_value = loan_analysis.iloc[0]
-    second_value = loan_analysis.iloc[1]
-    difference = top_value - second_value
+    top_intent = intent_analysis.index[0]
+    top_value = intent_analysis.iloc[0]
 
-    insights_text += f"""
-### 📌 Loan Behavior Insight
+    if len(intent_analysis) > 1:
+        second_value = intent_analysis.iloc[1]
+        diff = top_value - second_value
+    else:
+        diff = 0
 
-- **Highest average loan amount:** {top_intent} (${top_value:,.0f})
-- This is **${difference:,.0f} higher** than the next category.
+    summary_sections.append(f"""
+### 📌 Loan Intent Analysis
 
-💡 This suggests borrowers taking loans for **{top_intent}** typically require larger funding amounts.
-"""
+• Highest average loan amount: **{top_intent}** (${top_value:,.0f})  
+• This is **${diff:,.0f} higher** than the next category.
 
-# ---- 2️⃣ Strongest Correlation ----
+Meaning:
+Borrowers selecting **{top_intent}** typically require larger funding.
+This category represents higher financial demand compared to others.
+""")
+
+# -------------------------------
+# 2️⃣ Strongest Correlation
+# -------------------------------
 numeric_df = df.select_dtypes(include=np.number)
 
-if len(numeric_df.columns) > 1:
-    
+if len(numeric_df.columns) >= 2:
+
     corr_matrix = numeric_df.corr().abs()
+    upper = corr_matrix.where(
+        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+    )
 
-    # Remove self-correlation
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    strongest = upper.unstack().dropna().sort_values(ascending=False)
 
-    strongest_pair = upper.unstack().dropna().sort_values(ascending=False).index[0]
-    strongest_value = upper.unstack().dropna().sort_values(ascending=False).iloc[0]
+    if len(strongest) > 0:
+        pair = strongest.index[0]
+        corr_value = strongest.iloc[0]
 
-    insights_text += f"""
+        summary_sections.append(f"""
+### 🔗 Strongest Relationship
 
-### 🔗 Strongest Data Relationship
+• **{pair[0]} ↔ {pair[1]}**  
+• Correlation strength: **{corr_value:.2f}**
 
-- **{strongest_pair[0]} ↔ {strongest_pair[1]}**
-- Correlation strength: **{strongest_value:.2f}**
+Meaning:
+Changes in **{pair[0]}** strongly influence **{pair[1]}**.
+This relationship is one of the most important structural patterns in the dataset.
+""")
 
-💡 This means as **{strongest_pair[0]} increases**, {strongest_pair[1]} tends to change significantly as well.
-This relationship is one of the strongest drivers in your dataset.
-"""
-
-# ---- 3️⃣ Feature Importance from Random Forest (if trained) ----
+# -------------------------------
+# 3️⃣ Feature Importance (if ML ran)
+# -------------------------------
 if 'model' in locals() and hasattr(model, "feature_importances_"):
-    
-    importances = pd.Series(model.feature_importances_, index=X.columns)
-    top_features = importances.sort_values(ascending=False).head(3)
 
-    insights_text += f"""
+    importances = pd.Series(
+        model.feature_importances_,
+        index=X.columns
+    ).sort_values(ascending=False)
 
-### 🎯 What Actually Drives Predictions
+    top3 = importances.head(3)
 
-Top 3 Important Features:
-- {top_features.index[0]}
-- {top_features.index[1]}
-- {top_features.index[2]}
+    summary_sections.append(f"""
+### 🎯 What Drives Predictions
 
-💡 These variables have the strongest influence on your prediction model.
-They matter more than other features when determining outcomes.
-"""
+Top 3 Influential Features:
+• {top3.index[0]}  
+• {top3.index[1]}  
+• {top3.index[2]}
 
-# ---- 4️⃣ Dataset Health Meaning ----
-dataset_status = "ANALYSIS READY" if missing_pct < 5 else "NEEDS CLEANING"
+Meaning:
+These variables contribute the most to prediction accuracy.
+They matter more than other features in determining outcomes.
+""")
 
-insights_text += f"""
+# -------------------------------
+# 4️⃣ Dataset Readiness
+# -------------------------------
+missing_pct = df.isna().sum().sum() / (len(df) * len(df.columns)) * 100
+status = "ANALYSIS READY" if missing_pct < 5 else "NEEDS CLEANING"
 
-### 📊 Data Readiness
+summary_sections.append(f"""
+### 📊 Dataset Health
 
-- Missing data: {missing_pct:.1f}%
+• Missing data: {missing_pct:.1f}%  
 
-💡 With only {missing_pct:.1f}% missing values, your dataset is **{dataset_status}**
-and reliable for modeling and business insights.
-"""
+Meaning:
+With only {missing_pct:.1f}% missing values, your dataset is **{status}**
+and suitable for reliable modeling and decision-making.
+""")
 
-st.markdown(insights_text)
+# -------------------------------
+# Display All Sections
+# -------------------------------
+for section in summary_sections:
+    st.markdown(section)
